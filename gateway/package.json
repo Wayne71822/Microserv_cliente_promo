@@ -1,0 +1,15 @@
+{
+    "name": "restohub-gateway",
+    "version": "1.0.0",
+    "description": "Apollo Federation Gateway para RestoHub",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "node --watch index.js"
+    },
+    "dependencies": {
+        "@apollo/gateway": "^2.7.0",
+        "@apollo/server": "^4.10.0",
+        "graphql": "^16.8.1"
+    }
+}

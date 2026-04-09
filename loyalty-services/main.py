@@ -20,8 +20,8 @@ from enum import Enum
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:pass@localhost/loyalty_db")
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+    "DATABASE_URL", "postgresql://postgres:postgres@loyalty-db:5432/loyalty_db")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 # ─── BASE DE DATOS ─────────────────────────────────────────────────────────────
@@ -434,11 +434,11 @@ app.include_router(graphql_router, prefix="/graphql")
 async def startup():
     global redis_client
     await database.connect()
-    # Crear todas las tablas si no existen
-    engine = sqlalchemy.create_engine(DATABASE_URL.replace(
-        "postgresql://", "postgresql+psycopg2://"))
-    metadata.create_all(engine)
-    engine.dispose()
+    sync_engine = sqlalchemy.create_engine(
+        DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
+    )
+    metadata.create_all(sync_engine)
+    sync_engine.dispose()
     redis_client = await aioredis.from_url(REDIS_URL)
     import asyncio
     asyncio.create_task(consume_order_completed())

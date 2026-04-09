@@ -19,25 +19,19 @@ import os
 import json
 import aio_pika  # RabbitMQ async client
 
+
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://user:pass@localhost/customer_db")
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost/")
+    "DATABASE_URL", "postgresql://postgres:postgres@customer-db:5432/customer_db")
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "your-domain.auth0.com")
 LOYALTY_SERVICE_URL = os.getenv(
     "LOYALTY_SERVICE_URL", "http://loyalty-service:8001")
 
 # ─── BASE DE DATOS ────────────────────────────────────────────────────────────
 database = databases.Database(DATABASE_URL)
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
 metadata = sqlalchemy.MetaData()
+
 
 customers_table = sqlalchemy.Table(
     "customers", metadata,
@@ -295,14 +289,13 @@ app.include_router(graphql_router, prefix="/graphql")
 @app.on_event("startup")
 async def startup():
     await database.connect()
-    # Crear todas las tablas si no existen
-    engine = sqlalchemy.create_engine(DATABASE_URL.replace(
-        "postgresql://", "postgresql+psycopg2://"))
-    metadata.create_all(engine)
-    engine.dispose()
+    sync_engine = sqlalchemy.create_engine(
+        DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
+    )
+    metadata.create_all(sync_engine)   # crea las tablas si no existen
+    sync_engine.dispose()              # cierra la conexión inmediatamente
     import asyncio
     asyncio.create_task(consume_order_events())
-
 
 @app.on_event("shutdown")
 async def shutdown():

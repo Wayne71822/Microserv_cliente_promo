@@ -1,11 +1,93 @@
-version: "3.9"
+name: resto2
+
+networks:
+  resto2-network:
+    driver: bridge
 
 services:
 
-  # ─── INFRAESTRUCTURA ─────────────────────────────────────────────────────────
+  customer-db:
+    image: postgres:15
+    container_name: customer-db
+    environment:
+      POSTGRES_DB: customer_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    networks:
+      - resto2-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d customer_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
+  customer-service:
+    build:
+      context: ./customer-services
+      dockerfile: Dockerfile
+    container_name: resto2-customer-service
+    networks:
+      - resto2-network
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@customer-db/customer_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      customer-db:
+        condition: service_healthy
+
+  loyalty-db:
+    image: postgres:15
+    container_name: loyalty-db
+    environment:
+      POSTGRES_DB: loyalty_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    networks:
+      - resto2-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loyalty_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  loyalty-service:
+    build:
+      context: ./loyalty-services
+      dockerfile: Dockerfile
+    container_name: resto2-loyalty-service
+    networks:
+      - resto2-network
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@loyalty-db/loyalty_db
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      loyalty-db:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: rabbitmq
+    networks:
+      - resto2-network
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -13,120 +95,36 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  customer-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: customer_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5433:5432"
-
-  loyalty-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: loyalty_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5434:5432"
-
-  # ─── MICROSERVICIOS  ───────────────────────────────────────────────────
-
-  customer-service:
-    build:
-      context: ./customer-services
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@customer-db/customer_db
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      customer-db:
-        condition: service_started
-
-  loyalty-service:
-    build:
-      context: ./loyalty-services
-    ports:
-      - "8001:8001"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@loyalty-db/loyalty_db
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      loyalty-db:
-        condition: service_started
-      redis:
-        condition: service_started
-
-  # ─── MICROSERVICIOS DE COMPAÑEROS ────────────────────────────────────────────
-  # Descomentar cuando el compañero tenga su servicio listo y agregarlo aquí
-  #
-  # menu-service:
-  #   build:
-  #     context: ./menu-service
-  #   ports:
-  #     - "8002:8002"
-  #   environment:
-  #     DATABASE_URL: postgresql://postgres:postgres@menu-db/menu_db
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-  #   depends_on:
-  #     rabbitmq:
-  #       condition: service_healthy
-  #
-  # order-service:
-  #   build:
-  #     context: ./order-service
-  #   ports:
-  #     - "8003:8003"
-  #   environment:
-  #     DATABASE_URL: postgresql://postgres:postgres@order-db/order_db
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-  #   depends_on:
-  #     rabbitmq:
-  #       condition: service_healthy
-
-  # ─── APOLLO GATEWAY ──────────────────────────────────────────────────────────
-
   gateway:
     build:
       context: ./gateway
+      dockerfile: Dockerfile  # ← Minúscula, según tu imagen
+    container_name: resto2-gateway
+    networks:
+      - resto2-network
     ports:
       - "4000:4000"
-    environment:
-      CUSTOMER_SERVICE_URL: http://customer-service:8000/graphql
-      LOYALTY_SERVICE_URL: http://loyalty-service:8001/graphql
-      # Agregar URLs de compañeros aquí cuando estén listos:
-      # MENU_SERVICE_URL: http://menu-service:8002/graphql
-      # ORDER_SERVICE_URL: http://order-service:8003/graphql
-      # STAFF_SERVICE_URL: http://staff-service:8004/graphql
     depends_on:
-      - customer-service
-      - loyalty-service
-
-  # ─── FRONTEND ────────────────────────────────────────────────────────────────
+      customer-service:
+        condition: service_healthy
+      loyalty-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
 
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resto2-frontend
+    networks:
+      - resto2-network
     ports:
       - "5173:5173"
-    environment:
-      VITE_GATEWAY_URL: http://localhost:4000/graphql
     depends_on:
       - gateway

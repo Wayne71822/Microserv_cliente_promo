@@ -1,10 +1,12 @@
 """
 RestoHub - Loyalty & Promos Service
 Actualizado con: Healthcheck, Tasa dinámica de puntos, Configuración Global e Historial.
+Versión compatible con Alembic y Python 3.13.
 """
 from fastapi import Header, FastAPI
 from strawberry.fastapi import GraphQLRouter
 from strawberry.federation import Schema
+from strawberry.types import Info  # <--- IMPORTANTE: Necesario para tipar 'info'
 import strawberry
 from typing import Optional, List
 import databases
@@ -58,17 +60,19 @@ redis_client: aioredis.Redis = None
 
 async def get_points_cached(customer_id: str) -> int:
     try:
-        cached = await redis_client.get(f"points:{customer_id}")
-        if cached:
-            return int(cached)
+        if redis_client:
+            cached = await redis_client.get(f"points:{customer_id}")
+            if cached:
+                return int(cached)
     except Exception:
-        pass  # Si falla Redis, seguimos a la DB
+        pass
 
     row = await database.fetch_one(loyalty_accounts_table.select().where(loyalty_accounts_table.c.customer_id == customer_id))
     points = row["total_points"] if row else 0
 
     try:
-        await redis_client.setex(f"points:{customer_id}", 300, points)
+        if redis_client:
+            await redis_client.setex(f"points:{customer_id}", 300, points)
     except Exception:
         pass
     return points
@@ -111,13 +115,14 @@ class Query:
         return LoyaltyConfig(points_per_currency=row["points_per_currency"] if row else 1.0)
 
     @strawberry.field
-    async def my_points(self, info) -> LoyaltyAccount:
+    async def my_points(self, info: Info) -> LoyaltyAccount:  # <--- CAMBIO: info: Info
         customer_id = info.context["customer_id"]
         points = await get_points_cached(customer_id)
         return LoyaltyAccount(customer_id=customer_id, total_points=points)
 
     @strawberry.field
-    async def my_point_history(self, info) -> List[PointTransaction]:
+    # <--- CAMBIO: info: Info
+    async def my_point_history(self, info: Info) -> List[PointTransaction]:
         customer_id = info.context.get("customer_id")
         if not customer_id:
             return []
@@ -143,38 +148,41 @@ class Mutation:
 
 
 async def consume_order_completed():
-    connection = await aio_pika.connect_robust(RABBITMQ_URL)
-    channel = await connection.channel()
-    exchange = await channel.declare_exchange("orders", aio_pika.ExchangeType.TOPIC, durable=True)
-    queue = await channel.declare_queue("loyalty.order_completed", durable=True)
-    await queue.bind(exchange, routing_key="order.completed")
+    try:
+        connection = await aio_pika.connect_robust(RABBITMQ_URL)
+        channel = await connection.channel()
+        exchange = await channel.declare_exchange("orders", aio_pika.ExchangeType.TOPIC, durable=True)
+        queue = await channel.declare_queue("loyalty.order_completed", durable=True)
+        await queue.bind(exchange, routing_key="order.completed")
 
-    async def on_message(msg: aio_pika.IncomingMessage):
-        async with msg.process():
-            data = json.loads(msg.body.decode())
-            customer_id = data["customer_id"]
-            total_money = data["total"]
-            order_id = data["order_id"]
+        async def on_message(msg: aio_pika.IncomingMessage):
+            async with msg.process():
+                data = json.loads(msg.body.decode())
+                customer_id = data["customer_id"]
+                total_money = data["total"]
+                order_id = data["order_id"]
 
-            config = await database.fetch_one(loyalty_settings_table.select().where(loyalty_settings_table.c.id == 1))
-            rate = config["points_per_currency"] if config else 1.0
-            points_earned = math.floor(total_money * rate)
+                config = await database.fetch_one(loyalty_settings_table.select().where(loyalty_settings_table.c.id == 1))
+                rate = config["points_per_currency"] if config else 1.0
+                points_earned = math.floor(total_money * rate)
 
-            if points_earned > 0:
-                existing = await database.fetch_one(loyalty_accounts_table.select().where(loyalty_accounts_table.c.customer_id == customer_id))
-                if existing:
-                    await database.execute(loyalty_accounts_table.update().where(loyalty_accounts_table.c.customer_id == customer_id).values(total_points=existing["total_points"] + points_earned, updated_at=datetime.utcnow()))
-                else:
-                    await database.execute(loyalty_accounts_table.insert().values(customer_id=customer_id, total_points=points_earned, updated_at=datetime.utcnow()))
+                if points_earned > 0:
+                    existing = await database.fetch_one(loyalty_accounts_table.select().where(loyalty_accounts_table.c.customer_id == customer_id))
+                    if existing:
+                        await database.execute(loyalty_accounts_table.update().where(loyalty_accounts_table.c.customer_id == customer_id).values(total_points=existing["total_points"] + points_earned, updated_at=datetime.utcnow()))
+                    else:
+                        await database.execute(loyalty_accounts_table.insert().values(customer_id=customer_id, total_points=points_earned, updated_at=datetime.utcnow()))
 
-                await database.execute(point_transactions_table.insert().values(
-                    customer_id=customer_id, order_id=order_id, points_delta=points_earned,
-                    description=f"Puntos ganados por pedido {order_id}", created_at=datetime.utcnow()
-                ))
-                await invalidate_points_cache(customer_id)
-                print(f"[Loyalty] +{points_earned} pts para {customer_id}")
+                    await database.execute(point_transactions_table.insert().values(
+                        customer_id=customer_id, order_id=order_id, points_delta=points_earned,
+                        description=f"Puntos ganados por pedido {order_id}", created_at=datetime.utcnow()
+                    ))
+                    await invalidate_points_cache(customer_id)
+                    print(f"[Loyalty] +{points_earned} pts para {customer_id}")
 
-    await queue.consume(on_message)
+        await queue.consume(on_message)
+    except Exception as e:
+        print(f"[Error] Fallo en consumidor RabbitMQ: {e}")
 
 # ─── APP SETUP ────────────────────────────────────────────────────────────────
 
@@ -183,8 +191,7 @@ app = FastAPI(title="RestoHub - Loyalty & Promos Service")
 
 @app.get("/health")
 async def health_check():
-    """Endpoint para que Docker verifique si el servicio está vivo"""
-    return {"status": "healthy", "service": "loyalty-service", "timestamp": datetime.utcnow()}
+    return {"status": "healthy", "service": "loyalty-service", "timestamp": str(datetime.utcnow())}
 
 
 async def get_context(x_customer_id: str = Header(default=None)):
@@ -201,6 +208,7 @@ async def startup():
     await database.connect()
 
     # Engine síncrono solo para creación de tablas inicial
+    # Nota: Alembic ignorará esto y usará sus propias migraciones
     sync_engine = sqlalchemy.create_engine(
         DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://"))
     metadata.create_all(sync_engine)

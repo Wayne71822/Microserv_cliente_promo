@@ -1,19 +1,32 @@
 import { useState } from "react";
-import S from "../../styles/index.js";
+import { useQuery } from "@apollo/client";
+import S from "../../styles/index.js"; // Correcto
+import { GET_ALL_DISHES } from "../../api/graphql.js"; // Corregido: Subir 2 niveles
+import { useMyRatings } from "../../api/hooks.js"; // Corregido: Importar la función y subir 2 niveles
 
 export default function MenuTab({ user, onAgregar, setRatingModal }) {
   const [categoria, setCategoria] = useState("Todos");
-  const categorias = ["Todos", ...new Set(DB.platos.map((p) => p.categoria))];
-  const filtrados = DB.platos.filter(
-    (p) => p.activo && (categoria === "Todos" || p.categoria === categoria),
+
+  const { data: menuData, loading: menuLoading } = useQuery(GET_ALL_DISHES);
+  const { data: ratingsData } = useMyRatings(); // Ahora sí funcionará
+
+  if (menuLoading) return <div style={S.emptyState}>Cargando menú...</div>;
+
+  const platos = menuData?.allDishes || [];
+  const misReseñas = ratingsData?.myDishRatings || [];
+
+  const categorias = ["Todos", ...new Set(platos.map((p) => p.category || p.categoria))];
+
+  const filtrados = platos.filter(
+    (p) => categoria === "Todos" || (p.category || p.categoria) === categoria
   );
 
   return (
     <div>
-      <SectionTitle>Menú del restaurante</SectionTitle>
-      <div
-        style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}
-      >
+      <div style={S.sectionTitle}>Menú del restaurante</div>
+
+      {/* Selector de Categorías */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         {categorias.map((c) => (
           <button
             key={c}
@@ -25,8 +38,7 @@ export default function MenuTab({ user, onAgregar, setRatingModal }) {
               fontSize: 13,
               cursor: "pointer",
               fontWeight: 600,
-              background:
-                categoria === c ? "rgba(255,107,53,0.2)" : "transparent",
+              background: categoria === c ? "rgba(255,107,53,0.2)" : "transparent",
               color: categoria === c ? "#FF6B35" : "#8888bb",
               borderColor: categoria === c ? "rgba(255,107,53,0.5)" : "#2a2a4a",
             }}
@@ -35,46 +47,30 @@ export default function MenuTab({ user, onAgregar, setRatingModal }) {
           </button>
         ))}
       </div>
-      <div style={S.grid2}>
+
+      {/* Grid de Platos */}
+      <div style={S.grid}>
         {filtrados.map((plato) => {
-          const rating = DB.getRating(plato.id);
-          const ya = DB.yaReseñó(plato.id, user?.id);
+          // Verificamos si este plato específico ya fue reseñado por el usuario actual
+          const yaReseñado = misReseñas.some((r) => r.dishId === plato.id);
+
           return (
-            <div
-              key={plato.id}
-              style={{
-                ...S.dishCard,
-                flexDirection: "column",
-                alignItems: "stretch",
-                gap: 0,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  marginBottom: 12,
-                }}
-              >
-                <span style={{ fontSize: 34 }}>{plato.emoji}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={S.dishName}>{plato.nombre}</div>
-                  <div style={{ fontSize: 12, color: "#8888bb", marginTop: 2 }}>
-                    {plato.categoria}
+            <div key={plato.id} style={S.card}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>{plato.emoji || "🍽️"}</div>
+                  <div style={{ fontWeight: 700, color: "#fff", fontSize: 16 }}>
+                    {plato.name || plato.nombre}
                   </div>
                   <div style={{ fontSize: 12, color: "#8888bb", marginTop: 2 }}>
-                    {rating
-                      ? `⭐ ${rating} (${DB.platos.find((p) => p.id === plato.id)?.reseñas.length})`
-                      : "Sin valorar"}
+                    {plato.category || plato.categoria}
                   </div>
                 </div>
-                <div
-                  style={{ fontSize: 18, fontWeight: 800, color: "#FF6B35" }}
-                >
-                  ${plato.precio.toFixed(2)}
+                <div style={{ fontSize: 18, fontWeight: 800, color: "#FF6B35" }}>
+                  ${parseFloat(plato.price || plato.precio).toFixed(2)}
                 </div>
               </div>
+
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   style={{
@@ -91,14 +87,14 @@ export default function MenuTab({ user, onAgregar, setRatingModal }) {
                 <button
                   style={{
                     ...S.rateBtn,
-                    opacity: ya ? 0.4 : 1,
-                    cursor: ya ? "not-allowed" : "pointer",
+                    opacity: yaReseñado ? 0.4 : 1,
+                    cursor: yaReseñado ? "not-allowed" : "pointer",
                     flex: 1,
                     textAlign: "center",
                   }}
-                  onClick={() => !ya && setRatingModal(plato)}
+                  onClick={() => !yaReseñado && setRatingModal(plato)}
                 >
-                  {ya ? "✅" : "⭐ Valorar"}
+                  {yaReseñado ? "✅" : "⭐ Valorar"}
                 </button>
               </div>
             </div>

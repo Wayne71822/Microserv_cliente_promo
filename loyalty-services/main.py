@@ -3,7 +3,7 @@ RestoHub - Loyalty & Promos Service
 Microservicio de Promos y Fidelización
 Tecnologías: FastAPI + Strawberry GraphQL + PostgreSQL + Redis (caché de puntos)
 """
-
+from fastapi import Header  # <--- Asegúrate de importar Header
 from fastapi import FastAPI
 from strawberry.fastapi import GraphQLRouter
 from strawberry.federation import Schema
@@ -82,6 +82,15 @@ redemptions_table = sqlalchemy.Table(
                       default=datetime.utcnow),
 )
 
+rewards_table = sqlalchemy.Table(
+    "rewards", metadata,
+    sqlalchemy.Column("id", sqlalchemy.String, primary_key=True),
+    sqlalchemy.Column("name", sqlalchemy.String),
+    sqlalchemy.Column("description", sqlalchemy.String),
+    sqlalchemy.Column("points_cost", sqlalchemy.Integer),
+    sqlalchemy.Column("is_active", sqlalchemy.Boolean, default=True),
+)
+
 # ─── REDIS ─────────────────────────────────────────────────────────────────────
 redis_client: aioredis.Redis = None
 
@@ -149,6 +158,15 @@ class Promotion:
     stock_used: int
     valid_from: str
     valid_until: Optional[str]
+    is_active: bool
+
+
+@strawberry.type
+class Reward:
+    id: str
+    name: str
+    description: str
+    points_cost: int
     is_active: bool
 
     @strawberry.field
@@ -303,6 +321,48 @@ class Mutation:
         return Promotion(**{k: str(v) if isinstance(v, datetime) else v for k, v in d.items()})
 
     @strawberry.mutation
+    async def deactivate_promotion(self, id: str) -> bool:
+        """Desactiva una promoción sin eliminarla."""
+        await database.execute(
+            promotions_table.update()
+            .where(promotions_table.c.id == id)
+            .values(is_active=False)
+        )
+        return True
+
+    @strawberry.mutation
+    async def delete_promotion(self, id: str) -> bool:
+        """Elimina permanentemente una promoción."""
+        await database.execute(
+            promotions_table.delete().where(promotions_table.c.id == id)
+        )
+        return True
+
+    @strawberry.mutation
+    async def create_reward(
+        self,
+        id: str,
+        name: str,
+        description: str,
+        points_cost: int
+    ) -> Reward:
+        """Crea una nueva recompensa en el sistema de lealtad."""
+        await database.execute(rewards_table.insert().values(
+            id=id,
+            name=name,
+            description=description,
+            points_cost=points_cost,
+            is_active=True
+        ))
+        return Reward(
+            id=id,
+            name=name,
+            description=description,
+            points_cost=points_cost,
+            is_active=True
+        )
+
+    @strawberry.mutation
     async def redeem_points(
         self,
         info,
@@ -420,7 +480,8 @@ async def consume_order_completed():
 # ─── APP ──────────────────────────────────────────────────────────────────────
 
 
-async def get_context(x_customer_id: str = None):
+# --- FIX DEL CONTEXTO ---
+async def get_context(x_customer_id: str = Header(default=None)):
     return {"customer_id": x_customer_id}
 
 schema = Schema(query=Query, mutation=Mutation)

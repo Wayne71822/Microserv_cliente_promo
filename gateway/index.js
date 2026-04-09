@@ -1,64 +1,82 @@
 const { ApolloServer } = require("@apollo/server");
 const { startStandaloneServer } = require("@apollo/server/standalone");
-const { ApolloGateway, IntrospectAndCompose } = require("@apollo/gateway");
+const { ApolloGateway, IntrospectAndCompose, RemoteGraphQLDataSource } = require("@apollo/gateway");
+const jwt = require("jsonwebtoken"); // Asegúrate de correr: npm install jsonwebtoken
 
 // ─── CONFIGURACIÓN DEL GATEWAY ────────────────────────────────────────────────
-// Aquí se listan TODOS los microservicios que forman el grafo federado.
-// Cada compañero debe agregar su servicio en esta lista.
-
 const gateway = new ApolloGateway({
   supergraphSdl: new IntrospectAndCompose({
     subgraphs: [
       {
         name: "customer",
-        url:
-          process.env.CUSTOMER_SERVICE_URL ||
-          "http://customer-service:8000/graphql",
+        url: process.env.CUSTOMER_SERVICE_URL || "http://customer-service:8000/graphql",
       },
       {
         name: "loyalty",
-        url:
-          process.env.LOYALTY_SERVICE_URL ||
-          "http://loyalty-service:8001/graphql",
+        url: process.env.LOYALTY_SERVICE_URL || "http://loyalty-service:8001/graphql",
+      },
+      // PUNTO 5: Integración del microservicio del compañero
+      {
+        name: "menu",
+        url: process.env.MENU_SERVICE_URL || "http://menu-service:8002/graphql",
       },
     ],
   }),
+  // Esta sección asegura que el header x-customer-id llegue a los microservicios
+  buildService({ url }) {
+    return new RemoteGraphQLDataSource({
+      url,
+      willSendRequest({ request, context }) {
+        if (context.customerId) {
+          request.http.headers.set("x-customer-id", context.customerId);
+        }
+        if (context.token) {
+          request.http.headers.set("authorization", context.token);
+        }
+      },
+    });
+  },
 });
 
 // ─── SERVIDOR ─────────────────────────────────────────────────────────────────
 async function startGateway() {
   const server = new ApolloServer({
     gateway,
-    // Permite introspección para que el frontend pueda explorar el esquema
     introspection: true,
   });
 
   const { url } = await startStandaloneServer(server, {
     listen: { port: 4000, host: "0.0.0.0" },
-    // Extrae el token JWT del header y lo pasa a los subgrafos
     context: async ({ req }) => {
       const token = req.headers.authorization || "";
-      const customerId = req.headers["x-customer-id"] || "";
+      let customerId = req.headers["x-customer-id"] || "";
+
+      // PUNTO 6: Verificación de JWT (Auth0)
+      if (token.startsWith("Bearer ")) {
+        try {
+          const pureToken = token.split(" ")[1];
+          // Decodificamos el token para extraer el 'sub' (ID único de Auth0)
+          const decoded = jwt.decode(pureToken);
+          if (decoded && decoded.sub) {
+            customerId = decoded.sub;
+          }
+        } catch (err) {
+          console.error("❌ Error al decodificar JWT:", err.message);
+        }
+      }
+
       return {
         token,
         customerId,
-        headers: {
-          authorization: token,
-          "x-customer-id": customerId,
-        },
       };
     },
   });
 
   console.log(`🚀 Apollo Gateway corriendo en ${url}`);
-  console.log(`📊 GraphQL Playground: ${url}`);
-  console.log(`\n🔗 Subgrafos conectados:`);
-  console.log(
-    `   • customer-service → ${process.env.CUSTOMER_SERVICE_URL || "http://customer-service:8000/graphql"}`,
-  );
-  console.log(
-    `   • loyalty-service  → ${process.env.LOYALTY_SERVICE_URL || "http://loyalty-service:8001/graphql"}`,
-  );
+  console.log(`\n🔗 Subgrafos conectados y protegidos:`);
+  console.log(`   • customer-service → ${process.env.CUSTOMER_SERVICE_URL || "http://customer-service:8000/graphql"}`);
+  console.log(`   • loyalty-service  → ${process.env.LOYALTY_SERVICE_URL || "http://loyalty-service:8001/graphql"}`);
+  console.log(`   • menu-service     → ${process.env.MENU_SERVICE_URL || "http://menu-service:8002/graphql"}`);
 }
 
 startGateway().catch((err) => {

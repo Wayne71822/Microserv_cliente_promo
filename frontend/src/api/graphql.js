@@ -3,11 +3,7 @@ import { gql } from "@apollo/client";
 // ─── CUSTOMER SERVICE ─────────────────────────────────────────────────────────
 
 export const REGISTER_CUSTOMER = gql`
-  mutation RegisterCustomer(
-    $auth0Id: String!
-    $email: String!
-    $name: String!
-  ) {
+  mutation RegisterCustomer($auth0Id: String!, $email: String!, $name: String!) {
     registerCustomer(auth0Id: $auth0Id, email: $email, name: $name) {
       id
       email
@@ -115,6 +111,18 @@ export const GET_ACTIVE_PROMOTIONS = gql`
   }
 `;
 
+export const GET_ALL_REWARDS = gql`
+  query GetAllRewards {
+    allRewards {
+      id
+      name
+      description
+      pointsCost
+      isActive
+    }
+  }
+`;
+
 export const REDEEM_POINTS = gql`
   mutation RedeemPoints($pointsToRedeem: Int!, $orderId: String!) {
     redeemPoints(pointsToRedeem: $pointsToRedeem, orderId: $orderId) {
@@ -158,6 +166,82 @@ export const CREATE_PROMOTION = gql`
       description
       isActive
       isAvailable
+    }
+  }
+`;
+
+export const DEACTIVATE_PROMOTION = gql`
+  mutation DeactivatePromotion($id: String!) {
+    deactivatePromotion(id: $id)
+  }
+`;
+
+export const DELETE_PROMOTION = gql`
+  mutation DeletePromotion($id: String!) {
+    deletePromotion(id: $id)
+  }
+`;
+
+export const CREATE_REWARD = gql`
+  mutation CreateReward(
+    $id: String!
+    $name: String!
+    $description: String!
+    $pointsCost: Int!
+  ) {
+    createReward(
+      id: $id
+      name: $name
+      description: $description
+      pointsCost: $pointsCost
+    ) {
+      id
+      name
+      pointsCost
+      isActive
+    }
+  }
+`;
+
+// ─── MENU SERVICE (ADMINISTRACIÓN Y CONSULTA) ────────────────────────────────
+
+export const GET_ALL_DISHES = gql`
+  query GetAllDishes {
+    allDishes {
+      id
+      name
+      description
+      price
+      category
+      imageUrl
+      emoji
+      active
+    }
+  }
+`;
+
+export const CREATE_DISH = gql`
+  mutation CreateDish($input: DishInput!) {
+    createDish(input: $input) {
+      id
+      name
+      price
+      category
+      emoji
+      active
+    }
+  }
+`;
+
+export const UPDATE_DISH = gql`
+  mutation UpdateDish($id: ID!, $input: DishInput!) {
+    updateDish(id: $id, input: $input) {
+      id
+      name
+      price
+      category
+      emoji
+      active
     }
   }
 `;

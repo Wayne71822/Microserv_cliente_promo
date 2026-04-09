@@ -1,14 +1,15 @@
 import { useState } from "react";
-import S from "../../styles/index.js";
+// Corregido: un solo nivel hacia atrás si styles está en src/styles
+import S from "../styles/index.js";
 import { useRateDish } from "../api/hooks.js";
 
-export default function RatingModal({ plato, onRate, onClose, customerId }) {
+export default function RatingModal({ plato, onRate, onClose, customerId, yaReseñó, rating }) {
   const [stars, setStars] = useState(0);
   const [comentario, setComentario] = useState("");
   const [rateDish, { loading }] = useRateDish(customerId);
 
   const handleSubmit = async () => {
-    if (!stars) return;
+    if (!stars || loading) return;
     try {
       await rateDish({
         variables: {
@@ -17,19 +18,17 @@ export default function RatingModal({ plato, onRate, onClose, customerId }) {
           comment: comentario || null,
         },
       });
-      onRate(plato.id, stars, comentario); // notifica al padre para el toast y los pts
+      // Notifica al padre para cerrar el modal y mostrar feedback
+      onRate(plato.id, stars, comentario);
     } catch (e) {
-      console.error(e);
+      console.error("Error al enviar calificación:", e);
     }
   };
 
-  // el resto del render que ya tienes, pero reemplaza:
-  // el onClick del botón de confirmar → handleSubmit
-  // deshabilita el botón cuando loading === true
   return (
     <div style={S.modalOverlay} onClick={onClose}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-        <div style={{ fontSize: 52, marginBottom: 8 }}>{plato.emoji}</div>
+        <div style={{ fontSize: 52, marginBottom: 8 }}>{plato.emoji || "🍽️"}</div>
         <div
           style={{
             fontSize: 20,
@@ -38,16 +37,18 @@ export default function RatingModal({ plato, onRate, onClose, customerId }) {
             marginBottom: 4,
           }}
         >
-          {plato.nombre}
+          {plato.nombre || plato.name}
         </div>
+
         {rating && (
           <div style={{ fontSize: 13, color: "#8888bb", marginBottom: 16 }}>
             Valoración actual: ⭐ {rating}
           </div>
         )}
+
         {yaReseñó ? (
           <div style={{ fontSize: 14, color: "#8888bb", padding: "16px 0" }}>
-            ✅ Ya enviaste tu valoración
+            ✅ Ya enviaste tu valoración para este plato.
           </div>
         ) : (
           <>
@@ -71,6 +72,7 @@ export default function RatingModal({ plato, onRate, onClose, customerId }) {
                     transition: "transform 0.1s",
                   }}
                   onClick={() => setStars(s)}
+                  disabled={loading}
                 >
                   <span style={{ fontSize: 34, opacity: s <= stars ? 1 : 0.2 }}>
                     ⭐
@@ -88,19 +90,23 @@ export default function RatingModal({ plato, onRate, onClose, customerId }) {
               placeholder="Comentario opcional..."
               value={comentario}
               onChange={(e) => setComentario(e.target.value)}
+              disabled={loading}
             />
             <button
               style={{
                 ...S.primaryBtn,
-                opacity: stars === 0 ? 0.4 : 1,
+                opacity: (stars === 0 || loading) ? 0.4 : 1,
                 marginTop: 12,
+                cursor: (stars === 0 || loading) ? "not-allowed" : "pointer",
               }}
-              onClick={() => stars > 0 && onSubmit(plato.id, stars, comentario)}
+              onClick={handleSubmit}
+              disabled={stars === 0 || loading}
             >
-              Enviar valoración ⭐
+              {loading ? "Enviando..." : "Enviar valoración ⭐"}
             </button>
           </>
         )}
+
         <button
           style={{
             background: "none",
@@ -115,19 +121,6 @@ export default function RatingModal({ plato, onRate, onClose, customerId }) {
           Cerrar
         </button>
       </div>
-      {ratingModal && (
-        <RatingModal
-          plato={ratingModal}
-          userId={user.id}
-          yaReseñó={DB.yaReseñó(ratingModal.id, user.id)}
-          onSubmit={handleReseña}
-          onClose={() => setRatingModal(null)}
-        />
-      )}
     </div>
   );
-}
-
-function SectionTitle({ children }) {
-  return <div style={S.sectionTitle}>{children}</div>;
 }

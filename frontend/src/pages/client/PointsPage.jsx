@@ -7,47 +7,48 @@ import {
 } from "../../api/hooks.js";
 
 export default function PointsPage({ user, onCanje }) {
+  // 1. Estados locales para navegación
+  const [vista, setVista] = useState("recompensas");
+
+  // 2. Hooks de datos (Conectados al nuevo backend de FastAPI)
   const { data: pointsData, loading: loadingPoints } = useMyPoints(user?.id);
-  const { data: historyData, loading: loadingHistory } = usePointHistory(
-    user?.id,
-  );
+  const { data: historyData, loading: loadingHistory } = usePointHistory(user?.id);
   const [redeemPoints] = useRedeemPoints(user?.id);
 
+  // 3. Normalización de datos
+  // totalPoints viene del balance real en PostgreSQL
   const totalPoints = pointsData?.myPoints?.totalPoints ?? 0;
+  // historial viene de la tabla point_transactions
   const historial = historyData?.myPointHistory ?? [];
+
+  // Los cupones se filtran del historial buscando deltas negativos (canjes)
+  const cuponesCanjeados = historial.filter(tx => tx.points_delta < 0);
+
+  if (loadingPoints || loadingHistory) {
+    return <div style={S.emptyState}>Cargando tu billetera de puntos...</div>;
+  }
+
   return (
     <div>
+      {/* CARD DE PUNTOS TOTALES */}
       <div style={S.pointsCard}>
-        <div
-          style={{
-            fontSize: 12,
-            color: "#8888bb",
-            textTransform: "uppercase",
-            letterSpacing: 1,
-          }}
-        >
-          Mis puntos
+        <div style={{ fontSize: 12, color: "#8888bb", textTransform: "uppercase", letterSpacing: 1 }}>
+          Balance Actual
         </div>
-        <div
-          style={{
-            fontSize: 56,
-            fontWeight: 900,
-            color: "#FF6B35",
-            margin: "8px 0 4px",
-          }}
-        >
-          {points.toLocaleString()}
+        <div style={{ fontSize: 56, fontWeight: 900, color: "#FF6B35", margin: "8px 0 4px" }}>
+          {totalPoints.toLocaleString()}
         </div>
         <div style={{ fontSize: 14, color: "#aaaacc" }}>
-          ⭐ puntos acumulados · sin límite
+          ⭐ {totalPoints >= 1000 ? "¡Eres un cliente VIP!" : "Acumula puntos en cada compra"}
         </div>
       </div>
 
+      {/* TABS DE NAVEGACIÓN */}
       <div style={{ ...S.tabRow, marginTop: 20 }}>
         {[
           ["recompensas", "🎁 Canjear"],
-          ["cupones", "🎟️ Mis canjes"],
-          ["historial", "📜 Historial"],
+          ["cupones", "🎟️ Mis Cupones"],
+          ["historial", "📜 Actividad"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -59,172 +60,65 @@ export default function PointsPage({ user, onCanje }) {
         ))}
       </div>
 
+      {/* SECCIÓN: CANJEAR RECOMPENSAS */}
       {vista === "recompensas" && (
-        <div>
-          <p style={{ fontSize: 12, color: "#6666aa", marginBottom: 16 }}>
-            Canjea tus puntos por productos o cupones
-          </p>
+        <div style={{ marginTop: 16 }}>
           <div style={S.grid2}>
-            {DB.recompensas
-              .filter((r) => r.activa)
-              .map((r) => {
-                const puedo = DB.puedesCanjear(user.id, r);
-                const yaCanjeó = DB.canjesDeRecompensa(user.id, r.id);
-                const limite = r.limiteXUsuario;
-                const agotado = limite !== null && yaCanjeó >= limite;
-                const sinPuntos = points < r.puntosReq;
-                const razon = agotado
-                  ? `Límite: ${limite}/${limite}`
-                  : sinPuntos
-                    ? `Faltan ${r.puntosReq - points} pts`
-                    : "";
-                return (
-                  <div
-                    key={r.id}
-                    style={{
-                      ...S.rewardCard,
-                      opacity: puedo ? 1 : 0.6,
-                      borderColor: puedo ? "rgba(255,107,53,0.35)" : "#2a2a4a",
-                    }}
-                  >
-                    <div style={{ fontSize: 36, marginBottom: 8 }}>
-                      {r.emoji}
-                    </div>
-                    <div
+            {(window.DB?.recompensas || []).map((r) => {
+              const sinPuntos = totalPoints < r.puntosReq;
+
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    ...S.rewardCard,
+                    opacity: sinPuntos ? 0.7 : 1,
+                    border: sinPuntos ? "1px solid #2a2a4a" : "1px solid rgba(255,107,53,0.4)",
+                  }}
+                >
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>{r.emoji}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>{r.nombre}</div>
+                  <div style={{ fontSize: 11, color: "#8888bb", margin: "4px 0 12px" }}>{r.desc}</div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: 800, color: sinPuntos ? "#666" : "#FF6B35" }}>
+                      {r.puntosReq} pts
+                    </span>
+                    <button
                       style={{
-                        fontWeight: 700,
-                        fontSize: 15,
-                        color: "#fff",
-                        marginBottom: 4,
-                      }}
-                    >
-                      {r.nombre}
-                    </div>
-                    <div
-                      style={{
+                        ...S.adminBtn,
+                        padding: "6px 10px",
                         fontSize: 12,
-                        color: "#8888bb",
-                        marginBottom: 8,
+                        background: sinPuntos ? "#222" : "rgba(255,107,53,0.2)",
+                        cursor: sinPuntos ? "default" : "pointer"
                       }}
+                      onClick={() => !sinPuntos && onCanje(r)}
                     >
-                      {r.desc}
-                    </div>
-                    {limite !== null && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "#6666aa",
-                          marginBottom: 8,
-                        }}
-                      >
-                        Canjes: {yaCanjeó}/{limite}
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 800,
-                          color: puedo ? "#FF6B35" : "#666688",
-                        }}
-                      >
-                        {r.puntosReq} pts
-                      </span>
-                      <button
-                        style={{
-                          ...S.rateBtn,
-                          opacity: puedo ? 1 : 0.4,
-                          cursor: puedo ? "pointer" : "not-allowed",
-                          background: puedo
-                            ? "rgba(255,107,53,0.15)"
-                            : "rgba(100,100,120,0.1)",
-                          color: puedo ? "#FF6B35" : "#666688",
-                        }}
-                        onClick={() => puedo && onCanje(r)}
-                        title={razon}
-                      >
-                        {agotado
-                          ? "Agotado"
-                          : sinPuntos
-                            ? "Insuficiente"
-                            : "Canjear →"}
-                      </button>
-                    </div>
+                      {sinPuntos ? "Faltan pts" : "Canjear"}
+                    </button>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
+      {/* SECCIÓN: MIS CANJES (Extraídos del historial) */}
       {vista === "cupones" && (
-        <div>
-          {cupones.length === 0 ? (
-            <div style={S.emptyState}>No has canjeado nada aún</div>
+        <div style={{ marginTop: 16 }}>
+          {cuponesCanjeados.length === 0 ? (
+            <div style={S.emptyState}>No tienes cupones activos</div>
           ) : (
-            [...cupones].reverse().map((c, i) => (
-              <div
-                key={i}
-                style={{
-                  background: "#1a1a2e",
-                  border: "1px solid #2a2a4a",
-                  borderRadius: 14,
-                  padding: 16,
-                  marginBottom: 10,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 28 }}>{c.emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{ fontWeight: 700, color: "#fff", fontSize: 14 }}
-                    >
-                      {c.nombre}
-                    </div>
-                    <div
-                      style={{ fontSize: 12, color: "#8888bb", marginTop: 3 }}
-                    >
-                      Canjeado: {c.fecha}
-                    </div>
-                  </div>
-                  {c.codigo && (
-                    <div
-                      style={{
-                        background: "rgba(255,107,53,0.15)",
-                        border: "1px dashed #FF6B35",
-                        borderRadius: 8,
-                        padding: "6px 12px",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "#8888bb",
-                          marginBottom: 2,
-                        }}
-                      >
-                        CÓDIGO
-                      </div>
-                      <div
-                        style={{
-                          fontWeight: 800,
-                          fontSize: 13,
-                          color: "#FF6B35",
-                          letterSpacing: 2,
-                        }}
-                      >
-                        {c.codigo}
-                      </div>
-                    </div>
-                  )}
-                  {!c.codigo && <span style={{ fontSize: 22 }}>✅</span>}
+            cuponesCanjeados.map((c) => (
+              <div key={c.id} style={{ ...S.txRow, borderLeft: "4px solid #FF6B35", paddingLeft: 15 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: "#fff" }}>{c.description}</div>
+                  <div style={{ fontSize: 11, color: "#6666aa" }}>Usado el {new Date(c.created_at).toLocaleDateString()}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 10, color: "#8888bb" }}>VALOR</div>
+                  <div style={{ color: "#FF6B35", fontWeight: 800 }}>{Math.abs(c.points_delta)} pts</div>
                 </div>
               </div>
             ))
@@ -232,33 +126,34 @@ export default function PointsPage({ user, onCanje }) {
         </div>
       )}
 
+      {/* SECCIÓN: HISTORIAL DE MOVIMIENTOS (Real desde DB) */}
       {vista === "historial" && (
-        <div>
+        <div style={{ marginTop: 16 }}>
           {historial.length === 0 ? (
-            <div style={S.emptyState}>Sin movimientos aún</div>
+            <div style={S.emptyState}>Aún no tienes movimientos de puntos</div>
           ) : (
-            [...historial].reverse().map((tx) => (
-              <div key={tx.id} style={S.txRow}>
-                <div>
-                  <div style={{ fontSize: 13, color: "#e8e8f0" }}>
-                    {tx.desc}
+            historial.map((tx) => {
+              const esGanado = tx.points_delta > 0;
+              return (
+                <div key={tx.id} style={S.txRow}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, color: "#e8e8f0", fontWeight: 500 }}>
+                      {tx.description}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6666aa", marginTop: 2 }}>
+                      {new Date(tx.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "#6666aa", marginTop: 3 }}>
-                    {tx.fecha}
+                  <div style={{
+                    fontWeight: 700,
+                    fontSize: 15,
+                    color: esGanado ? "#00C896" : "#FF6B6B"
+                  }}>
+                    {esGanado ? "+" : ""}{tx.points_delta}
                   </div>
                 </div>
-                <span
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 14,
-                    color: tx.delta > 0 ? "#00C896" : "#FF6B6B",
-                  }}
-                >
-                  {tx.delta > 0 ? "+" : ""}
-                  {tx.delta} pts
-                </span>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

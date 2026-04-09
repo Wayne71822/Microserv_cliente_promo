@@ -122,7 +122,10 @@ class Query:
         )
         if not row:
             return None
-        return Customer(**dict(row), created_at=str(row["created_at"]))
+        # CORRECCIÓN: Evitar múltiples valores para created_at
+        data = dict(row)
+        data["created_at"] = str(data["created_at"])
+        return Customer(**data)
 
     @strawberry.field
     async def customer(self, id: str) -> Optional[Customer]:
@@ -132,7 +135,10 @@ class Query:
         )
         if not row:
             return None
-        return Customer(**dict(row), created_at=str(row["created_at"]))
+        # CORRECCIÓN: Evitar múltiples valores para created_at
+        data = dict(row)
+        data["created_at"] = str(data["created_at"])
+        return Customer(**data)
 
     @strawberry.field
     async def my_dish_ratings(self, info) -> List[DishRating]:
@@ -155,12 +161,15 @@ class Mutation:
         email: str,
         name: str
     ) -> Customer:
-        """Se llama automáticamente tras el login con Auth0 (Auth0 Action/Hook)."""
+        """Se llama automáticamente tras el login con Auth0."""
         exists = await database.fetch_one(
             customers_table.select().where(customers_table.c.id == auth0_id)
         )
         if exists:
-            return Customer(**dict(exists), created_at=str(exists["created_at"]))
+            # CORRECCIÓN: Evitar múltiples valores para created_at
+            data = dict(exists)
+            data["created_at"] = str(data["created_at"])
+            return Customer(**data)
 
         await database.execute(customers_table.insert().values(
             id=auth0_id, email=email, name=name
@@ -168,7 +177,10 @@ class Mutation:
         row = await database.fetch_one(
             customers_table.select().where(customers_table.c.id == auth0_id)
         )
-        return Customer(**dict(row), created_at=str(row["created_at"]))
+        # CORRECCIÓN: Evitar múltiples valores para created_at
+        data = dict(row)
+        data["created_at"] = str(data["created_at"])
+        return Customer(**data)
 
     @strawberry.mutation
     async def update_profile(
@@ -195,7 +207,10 @@ class Mutation:
         row = await database.fetch_one(
             customers_table.select().where(customers_table.c.id == customer_id)
         )
-        return Customer(**dict(row), created_at=str(row["created_at"]))
+        # CORRECCIÓN: Evitar múltiples valores para created_at
+        data = dict(row)
+        data["created_at"] = str(data["created_at"])
+        return Customer(**data)
 
     @strawberry.mutation
     async def rate_dish(
@@ -221,14 +236,10 @@ class Mutation:
         )
         return DishRating(**dict(row))
 
-# ─── CONTEXT (extrae customer_id del JWT validado por el Gateway) ─────────────
+# ─── CONTEXT ─────────────────────────────────────────────────────────────────
 
 
 async def get_context(x_customer_id: str = Header(default=None)):
-    """
-    El Apollo Gateway valida el JWT de Auth0 y reenvía el customer_id
-    como header interno. Nunca llega sin validar al servicio.
-    """
     return {"customer_id": x_customer_id}
 
 # ─── CONSUMIDOR RABBITMQ ──────────────────────────────────────────────────────
@@ -237,7 +248,6 @@ async def get_context(x_customer_id: str = Header(default=None)):
 async def consume_order_events():
     import asyncio
 
-    # ── Reintentos de conexión ──────────────────────────────────────
     connection = None
     for intento in range(10):
         try:
@@ -253,13 +263,11 @@ async def consume_order_events():
         print("[Customer Service] No se pudo conectar a RabbitMQ después de 10 intentos")
         return
 
-    # ── Configurar canal, exchange y cola ───────────────────────────
     channel = await connection.channel()
     exchange = await channel.declare_exchange("orders", aio_pika.ExchangeType.TOPIC, durable=True)
     queue = await channel.declare_queue("customer.order_history", durable=True)
     await queue.bind(exchange, routing_key="order.completed")
 
-    # ── Callback del mensaje ────────────────────────────────────────
     async def on_message(message: aio_pika.IncomingMessage):
         async with message.process():
             data = json.loads(message.body.decode())
@@ -292,10 +300,11 @@ async def startup():
     sync_engine = sqlalchemy.create_engine(
         DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
     )
-    metadata.create_all(sync_engine)   # crea las tablas si no existen
-    sync_engine.dispose()              # cierra la conexión inmediatamente
+    metadata.create_all(sync_engine)
+    sync_engine.dispose()
     import asyncio
     asyncio.create_task(consume_order_events())
+
 
 @app.on_event("shutdown")
 async def shutdown():

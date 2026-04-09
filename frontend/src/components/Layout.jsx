@@ -6,15 +6,16 @@ export default function Layout({
   user,
   restaurant,
   isAdmin,
-  carrito,
+  cartCount, // Cambiamos 'carrito' por 'cartCount' que ya viene calculado
   toast,
   tabs,
   activeTab,
   setActiveTab,
-  onLogout,
+  handleLogout,
   children,
 }) {
-  const cantCarrito = carrito.reduce((a, i) => a + i.cantidad, 0);
+  // Eliminamos la línea del .reduce que causaba el error ya que recibimos el número listo
+  const mostrarCarrito = cartCount || 0;
 
   return (
     <div style={S.app}>
@@ -25,7 +26,7 @@ export default function Layout({
           <div style={S.logo}>RH</div>
           <div>
             <div style={S.headerTitle}>RestoHub</div>
-            <div style={S.headerSub}>{user?.restaurant || restaurant}</div>
+            <div style={S.headerSub}>{user?.restaurant || restaurant || "Sucursal Principal"}</div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -35,10 +36,10 @@ export default function Layout({
               <span style={S.pointsNum}>{user?.points ?? 0} pts</span>
             </div>
           )}
-          {!isAdmin && cantCarrito > 0 && (
-            <div style={S.cartBadge}>🛒 {cantCarrito}</div>
+          {!isAdmin && mostrarCarrito > 0 && (
+            <div style={S.cartBadge}>🛒 {mostrarCarrito}</div>
           )}
-          <button onClick={onLogout} style={S.adminBtn}>
+          <button onClick={handleLogout} style={S.adminBtn}>
             Salir
           </button>
         </div>

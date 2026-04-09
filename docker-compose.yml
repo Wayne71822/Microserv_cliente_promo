@@ -5,7 +5,7 @@ networks:
     driver: bridge
 
 services:
-
+  # --- INFRAESTRUCTURA ---
   customer-db:
     image: postgres:15
     container_name: customer-db
@@ -18,32 +18,10 @@ services:
     networks:
       - resto2-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d customer_db"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d customer_db" ]
       interval: 5s
       timeout: 5s
       retries: 10
-
-
-  customer-service:
-    build:
-      context: ./customer-services
-      dockerfile: Dockerfile
-    container_name: resto2-customer-service
-    networks:
-      - resto2-network
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@customer-db/customer_db
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    depends_on:
-      customer-db:
-        condition: service_healthy
 
   loyalty-db:
     image: postgres:15
@@ -57,31 +35,10 @@ services:
     networks:
       - resto2-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d loyalty_db"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d loyalty_db" ]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  loyalty-service:
-    build:
-      context: ./loyalty-services
-      dockerfile: Dockerfile
-    container_name: resto2-loyalty-service
-    networks:
-      - resto2-network
-    ports:
-      - "8001:8001"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@loyalty-db/loyalty_db
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq/
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    depends_on:
-      loyalty-db:
-        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -95,28 +52,80 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # --- MICROSERVICIOS ---
+  customer-service:
+    build:
+      context: ./customer-services
+      dockerfile: Dockerfile
+    container_name: resto2-customer-service
+    networks:
+      - resto2-network
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@customer-db/customer_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+      - AUTH0_DOMAIN=dev-casxiurnalctzc4l.us.auth0.com # <--- CORRECCIÓN AQUÍ
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      customer-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  loyalty-service:
+    build:
+      context: ./loyalty-services
+      dockerfile: Dockerfile
+    container_name: resto2-loyalty-service
+    networks:
+      - resto2-network
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@loyalty-db/loyalty_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq/
+      - AUTH0_DOMAIN=dev-casxiurnalctzc4l.us.auth0.com # <--- CORRECCIÓN AQUÍ
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      loyalty-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # --- GATEWAY ---
   gateway:
     build:
       context: ./gateway
-      dockerfile: Dockerfile  # ← Minúscula, según tu imagen
+      dockerfile: Dockerfile
     container_name: resto2-gateway
     networks:
       - resto2-network
     ports:
       - "4000:4000"
+    environment:
+      CUSTOMER_SERVICE_URL: http://customer-service:8000/graphql
+      LOYALTY_SERVICE_URL: http://loyalty-service:8001/graphql
     depends_on:
       customer-service:
         condition: service_healthy
       loyalty-service:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
 
+  # --- FRONTEND ---
   frontend:
     build:
       context: ./frontend

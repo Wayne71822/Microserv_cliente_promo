@@ -1,24 +1,65 @@
 import { useState } from "react";
 import S from "../../styles/index.js";
 
+const SectionTitle = ({ children }) => (
+  <h2 style={{ color: "#fff", fontSize: 18, marginBottom: 16, marginTop: 24, fontWeight: 700 }}>
+    {children}
+  </h2>
+);
+
 export default function HomePage({
   user,
   showToast,
   setRatingModal,
   setActiveTab,
 }) {
+  // NOTA: 'pedidos' y 'reseñas' vendrán del objeto user o de queries de Apollo
   const pedidos = user?.pedidos || [];
+  const cupones = user?.cuponesCanjeados || [];
+
+  // Para las reseñas enviadas y pendientes, usamos estados que se sincronizarán con el servidor
+  // Por ahora los protegemos con valores por defecto para evitar el crash
+  const platosDisponibles = [];
+  const misReseñas = user?.reviews || [];
+
   const tieneReseñasPendientes =
-    pedidos.length > 0 && DB.platos.some((p) => !DB.yaReseñó(p.id, user?.id));
+    pedidos.length > 0 && platosDisponibles.some((p) => !misReseñas.find(r => r.dishId === p.id));
+
+  const stats = [
+    {
+      icon: "📋",
+      label: "Pedidos realizados",
+      value: pedidos.length,
+      color: "#FF6B35",
+    },
+    {
+      icon: "⭐",
+      label: "Puntos acumulados",
+      value: (user?.points || 0).toLocaleString(),
+      color: "#FFD700",
+    },
+    {
+      icon: "🎟️",
+      label: "Cupones canjeados",
+      value: cupones.length,
+      color: "#7C5CFC",
+    },
+    {
+      icon: "📝",
+      label: "Reseñas enviadas",
+      value: misReseñas.length,
+      color: "#00C896",
+    },
+  ];
 
   return (
     <div>
       <div style={S.welcomeCard}>
         <div style={{ fontSize: 36 }}>👋</div>
         <div style={{ flex: 1 }}>
-          <div style={S.welcomeName}>Hola, {user?.name?.split(" ")[0]}</div>
+          <div style={S.welcomeName}>Hola, {user?.name?.split(" ")[0] || 'Cliente'}</div>
           <div style={{ fontSize: 13, color: "#8888bb", marginTop: 4 }}>
-            {user?.restaurant} · {user?.country}
+            {user?.restaurant || 'RestoHub'} · {user?.country || 'General'}
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -31,33 +72,8 @@ export default function HomePage({
 
       <SectionTitle>Mi resumen</SectionTitle>
       <div style={S.grid2}>
-        {[
-          {
-            icon: "📋",
-            label: "Pedidos realizados",
-            value: pedidos.length,
-            color: "#FF6B35",
-          },
-          {
-            icon: "⭐",
-            label: "Puntos acumulados",
-            value: (user?.points || 0).toLocaleString(),
-            color: "#FFD700",
-          },
-          {
-            icon: "🎟️",
-            label: "Cupones canjeados",
-            value: (user?.cuponesCanjeados || []).length,
-            color: "#7C5CFC",
-          },
-          {
-            icon: "📝",
-            label: "Reseñas enviadas",
-            value: DB.platos.filter((p) => DB.yaReseñó(p.id, user?.id)).length,
-            color: "#00C896",
-          },
-        ].map((s, i) => (
-          <div key={i} style={S.statCard}>
+        {stats.map((s, i) => (
+          <div key={i} style={{ ...S.card, textAlign: 'center', padding: '15px 10px' }}>
             <div style={{ fontSize: 26 }}>{s.icon}</div>
             <div style={{ fontSize: 26, fontWeight: 900, color: s.color }}>
               {s.value}
@@ -96,14 +112,14 @@ export default function HomePage({
         <>
           <SectionTitle>Platos sin valorar</SectionTitle>
           <div style={S.grid2}>
-            {DB.platos
-              .filter((p) => p.activo && !DB.yaReseñó(p.id, user?.id))
+            {platosDisponibles
+              .filter((p) => p.active && !misReseñas.find(r => r.dishId === p.id))
               .slice(0, 4)
               .map((plato) => (
                 <div key={plato.id} style={S.dishCard}>
-                  <span style={{ fontSize: 26 }}>{plato.emoji}</span>
+                  <span style={{ fontSize: 26 }}>{plato.emoji || "🍽️"}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={S.dishName}>{plato.nombre}</div>
+                    <div style={S.dishName}>{plato.name || plato.nombre}</div>
                     <div style={{ fontSize: 12, color: "#8888bb" }}>
                       Sin tu valoración
                     </div>

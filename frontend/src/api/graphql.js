@@ -28,6 +28,19 @@ export const GET_ME = gql`
   }
 `;
 
+// AGREGADO: Para solucionar el error en DashboardPage.jsx
+export const GET_ALL_CLIENTS = gql`
+  query GetAllClients {
+    allCustomers {
+      id
+      name
+      email
+      phone
+      createdAt
+    }
+  }
+`;
+
 export const UPDATE_PROFILE = gql`
   mutation UpdateProfile(
     $countryId: String
@@ -80,9 +93,10 @@ export const GET_MY_POINTS = gql`
   }
 `;
 
+// Unificado para usar pointsDelta (como está en el main.py de FastAPI)
 export const GET_POINT_HISTORY = gql`
-  query GetPointHistory($limit: Int) {
-    myPointHistory(limit: $limit) {
+  query GetMyPointHistory {
+    myPointHistory {
       id
       pointsDelta
       description
@@ -203,7 +217,21 @@ export const CREATE_REWARD = gql`
   }
 `;
 
-// ─── MENU SERVICE (ADMINISTRACIÓN Y CONSULTA) ────────────────────────────────
+export const GET_LOYALTY_CONFIG = gql`
+  query GetLoyaltyConfig {
+    loyaltyConfig {
+      pointsPerCurrency
+    }
+  }
+`;
+
+export const UPDATE_LOYALTY_CONFIG = gql`
+  mutation UpdateLoyaltyConfig($points: Float!) {
+    updateLoyaltyConfig(points: $points)
+  }
+`;
+
+// ─── MENU SERVICE ────────────────────────────────────────────────────────────
 
 export const GET_ALL_DISHES = gql`
   query GetAllDishes {
@@ -216,6 +244,11 @@ export const GET_ALL_DISHES = gql`
       imageUrl
       emoji
       active
+      # Incluimos reviews para el Dashboard
+      reviews {
+        stars
+        comment
+      }
     }
   }
 `;

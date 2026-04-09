@@ -1,14 +1,24 @@
 import { useState } from "react";
 import S from "../../styles/index.js";
-// Admin ve solo clientes de su sede
+
+// Componente auxiliar para el título
+const SectionTitle = ({ children }) => (
+  <h2 style={{ color: "#fff", fontSize: 18, marginBottom: 16, fontWeight: 700 }}>
+    {children}
+  </h2>
+);
+
 export default function AdminClientes({ user }) {
   const [busq, setBusq] = useState("");
-  const clientes = DB.clientesDeSede(user?.country, user?.restaurant);
+
+  // Temporalmente vacío hasta conectar con el microservicio de clientes (Apollo/GraphQL)
+  const clientes = [];
+
   const filtrados = clientes.filter(
     (u) =>
       !busq ||
       u.name?.toLowerCase().includes(busq.toLowerCase()) ||
-      u.email?.toLowerCase().includes(busq.toLowerCase()),
+      u.email?.toLowerCase().includes(busq.toLowerCase())
   );
 
   return (
@@ -16,12 +26,14 @@ export default function AdminClientes({ user }) {
       <SectionTitle>
         Clientes de {user?.restaurant || "la sede"} ({clientes.length})
       </SectionTitle>
+
       <input
         style={{ ...S.input, marginBottom: 16 }}
         placeholder="Buscar por nombre o email..."
         value={busq}
         onChange={(e) => setBusq(e.target.value)}
       />
+
       {filtrados.length === 0 && (
         <div style={S.emptyState}>
           {clientes.length === 0
@@ -29,10 +41,13 @@ export default function AdminClientes({ user }) {
             : "Sin resultados"}
         </div>
       )}
+
       {filtrados.map((c) => {
-        const reseñas = DB.platos.filter((p) => DB.yaReseñó(p.id, c.id)).length;
+        // Fallbacks seguros para evitar errores de referencia
+        const reseñas = c.reviewsCount || 0;
         const canjes = (c.cuponesCanjeados || []).length;
         const pedidos = (c.pedidos || []).length;
+
         return (
           <div
             key={c.id}
@@ -74,7 +89,7 @@ export default function AdminClientes({ user }) {
                   {c.name}
                 </div>
                 <div style={{ fontSize: 12, color: "#8888bb" }}>
-                  {c.email} · {c.country}
+                  {c.email} · {c.country || user?.country}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>

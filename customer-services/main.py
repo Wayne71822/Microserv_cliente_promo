@@ -3,7 +3,9 @@ RestoHub - Customer Service
 Microservicio de Cliente
 Tecnologías: FastAPI + Strawberry GraphQL (subgrafo Apollo Federation) + SQLAlchemy + PostgreSQL
 """
-
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
 from fastapi import FastAPI, Depends, HTTPException, Header
 from strawberry.fastapi import GraphQLRouter
 import strawberry
@@ -27,6 +29,14 @@ LOYALTY_SERVICE_URL = os.getenv(
 
 # ─── BASE DE DATOS ────────────────────────────────────────────────────────────
 database = databases.Database(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
 metadata = sqlalchemy.MetaData()
 
 customers_table = sqlalchemy.Table(
